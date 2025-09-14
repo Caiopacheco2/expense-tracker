@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8"/>
+  <title>Controle de Gastos - Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 920px; margin: 20px auto; padding: 0 12px; }
+    header { display: flex; justify-content: space-between; align-items: baseline; }
+    h1 { margin: 0; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 12px 0; }
+    label { display:block; margin-top:8px; }
+    input, select { padding: 8px; width: 100%; box-sizing: border-box; }
+    button { padding: 8px 12px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
+    .row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+    @media (max-width: 800px) { .row { grid-template-columns: 1fr 1fr; } }
+    .income { font-weight: 600; }
+    .expense { color: #b00020; font-weight: 600; }
+    .flex { display:flex; gap:8px; flex-wrap: wrap; align-items: center;}
+    .right { margin-left:auto; }
+    .muted { color:#666; }
+    footer { margin: 16px 0; font-size: 0.9em; color:#666; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>💸 Controle de Gastos</h1>
+    <a href="/swagger-ui.html" target="_blank">Swagger UI</a>
+  </header>
+
+  <div class="card">
+    <h3>Lançar transação</h3>
+    <div class="row">
+      <div>
+        <label>Descrição</label>
+        <input id="desc" placeholder="Ex.: Mercado, salário, uber..."/>
+      </div>
+      <div>
+        <label>Valor (R$)</label>
+        <input id="amount" type="number" step="0.01" min="0"/>
+      </div>
+      <div>
+        <label>Data</label>
+        <input id="date" type="date"/>
+      </div>
+      <div>
+        <label>Categoria</label>
+        <select id="category"></select>
+      </div>
+      <div>
+        <label>Tipo</label>
+        <select id="type">
+          <option value="EXPENSE">Despesa</option>
+          <option value="INCOME">Receita</option>
+        </select>
+      </div>
+      <div style="align-self:end;">
+        <button onclick="add()">Adicionar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex">
+      <h3 style="margin:0;">Transações</h3>
+      <div class="right muted" id="count"></div>
+    </div>
+    <div class="flex">
+      <div>
+        <label class="muted">Filtros rápidos</label>
+        <div class="flex">
+          <input type="date" id="startDate"/>
+          <input type="date" id="endDate"/>
+          <select id="filterType">
+            <option value="">Todos</option>
+            <option value="INCOME">Receitas</option>
+            <option value="EXPENSE">Despesas</option>
+          </select>
+          <select id="filterCategory"></select>
+          <button onclick="load()">Aplicar</button>
+          <button onclick="clearFilters()">Limpar</button>
+        </div>
+      </div>
+    </div>
+
+    <table id="table">
+      <thead>
+        <tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Valor</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Resumo mensal</h3>
+    <div class="flex">
+      <input type="month" id="monthPicker"/>
+      <button onclick="loadSummary()">Atualizar</button>
+    </div>
+    <p><span class="income">Receitas:</span> R$ <span id="sumIncome">0,00</span> &nbsp;|&nbsp; 
+       <span class="expense">Despesas:</span> R$ <span id="sumExpense">0,00</span> &nbsp;|&nbsp; 
+       <b>Saldo:</b> R$ <span id="sumNet">0,00</span></p>
+    <div id="byCategory"></div>
+  </div>
+
+  <footer>Demo em memória (H2). Código fonte em <code>/api</code> e documentação via Swagger. </footer>
+
+<script>
+const CATEGORIES = ["HOUSING","FOOD","TRANSPORT","HEALTH","EDUCATION","LEISURE","UTILITIES","INVESTMENTS","SALARY","OTHER"];
+const catSel = document.getElementById('category');
+const filterCatSel = document.getElementById('filterCategory');
+CATEGORIES.forEach(c => {
+  const o = document.createElement('option'); o.value=c; o.text=c;
+  catSel.appendChild(o.cloneNode(true));
+  filterCatSel.appendChild(o);
+});
+document.getElementById('date').valueAsNumber = Date.now() - new Date().getTimezoneOffset()*60000;
+document.getElementById('monthPicker').value = new Date().toISOString().slice(0,7);
+
+function money(n){ return (n||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+async function add(){
+  const body = {
+    description: document.getElementById('desc').value,
+    amount: parseFloat(document.getElementById('amount').value),
+    date: document.getElementById('date').value,
+    category: document.getElementById('category').value,
+    type: document.getElementById('type').value
+  };
+  if(!body.description || isNaN(body.amount) || !body.date){ alert("Preencha descrição, valor e data."); return; }
+  const res = await fetch('/api/transactions', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if(!res.ok){ alert('Erro ao adicionar'); return; }
+  document.getElementById('desc').value = ''; document.getElementById('amount').value='';
+  load();
+}
+
+function clearFilters(){
+  document.getElementById('startDate').value = '';
+  document.getElementById('endDate').value = '';
+  document.getElementById('filterType').value = '';
+  document.getElementById('filterCategory').value = '';
+  load();
+}
+
+async function load(){
+  const params = new URLSearchParams();
+  const s = document.getElementById('startDate').value; if(s) params.append('startDate', s);
+  const e = document.getElementById('endDate').value; if(e) params.append('endDate', e);
+  const t = document.getElementById('filterType').value; if(t) params.append('type', t);
+  const c = document.getElementById('filterCategory').value; if(c) params.append('category', c);
+  const res = await fetch('/api/transactions?' + params.toString());
+  const data = await res.json();
+  render(data);
+}
+
+function render(items){
+  const tbody = document.querySelector('#table tbody');
+  tbody.innerHTML = '';
+  items.sort((a,b)=>a.date.localeCompare(b.date));
+  for(const it of items){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${it.date}</td>
+                     <td>${it.description}</td>
+                     <td>${it.category}</td>
+                     <td>${it.type}</td>
+                     <td class="${it.type==='EXPENSE'?'expense':'income'}">R$ ${money(it.amount)}</td>
+                     <td><button data-id="${it.id}">Excluir</button></td>`;
+    tr.querySelector('button').onclick = async () => {
+      if(confirm('Confirmar exclusão?')){
+        await fetch('/api/transactions/'+it.id, {method:'DELETE'});
+        load();
+      }
+    };
+    tbody.appendChild(tr);
+  }
+  document.getElementById('count').textContent = items.length + ' lançamentos';
+}
+
+async function loadSummary(){
+  const ym = document.getElementById('monthPicker').value; // yyyy-MM
+  const [year, month] = ym.split('-');
+  const res = await fetch('/api/summary/monthly?year='+year+'&month='+parseInt(month));
+  const s = await res.json();
+  document.getElementById('sumIncome').textContent = money(s.totalIncome);
+  document.getElementById('sumExpense').textContent = money(s.totalExpense);
+  document.getElementById('sumNet').textContent = money(s.net);
+  const byc = document.getElementById('byCategory');
+  byc.innerHTML = '<ul>' + Object.entries(s.byCategory||{}).map(([k,v])=>'<li>'+k+': R$ '+money(v)+'</li>').join('') + '</ul>';
+}
+
+load();
+loadSummary();
+</script>
+</body>
+</html>
