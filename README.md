@@ -43,21 +43,21 @@ curl "http://localhost:8080/api/summary/monthly?year=2025&month=9"
 
 ---
 
-# ▶️ Como executar
+# ▶ Como executar
 ```bash
 mvn spring-boot:run
 # ou
 mvn clean package && java -jar target/expense-tracker-0.0.1-SNAPSHOT.jar
 ```
 
-## 🧪 Passos de validação rápida
+##  Passos de validação rápida
 
 - Abrir http://localhost:8080/ e lançar 2–3 transações (receitas e despesas).
 - Conferir listagem e filtros.
 - Em “Resumo mensal”, selecionar o mês e clicar “Atualizar”.
 - Abrir http://localhost:8080/swagger-ui.html e testar os endpoints.
 
-## 🧰 (Opcional) Trocar H2 por Postgres
+##  (Opcional) Trocar H2 por Postgres
 
 Adicione dependência `org.postgresql:postgresql` e troque as configs:
 
